@@ -1,0 +1,84 @@
+import random
+
+def sum(weights, values):
+    sum = 0
+    for i in range(0, len(weights)):
+        sum += weights[i] * values[i]
+    return sum
+
+def randomizeInputs(x, y, i):
+    results = []
+    for i in range(0, i):
+        nextY = y + random.random() * 0.15
+        nextX = x + random.random() * 0.15
+        results.append((nextX, nextY))
+    return results
+
+def trainPercepton(trainingSet):
+    theta = 0.65
+    alpha = 0.1
+    weights = [random.random() * 0.05 for _ in trainingSet[0]]
+    cont = True
+    while cont:
+        cont = False
+        for (values, category) in trainingSet: 
+            stimulation = sum(weights, values)
+            result = 1 if stimulation > theta else 0
+            error = category - result
+            if error != 0:
+                cont = True
+            for i in range(0, len(values)):
+                weights[i] = weights[i] + alpha * error * values[i]
+    
+    return weights
+
+def trainPerceptonBias(trainingSet):
+    alpha = 0.1
+    bias = [1]
+    weights = [random.random() * 0.05 for _ in bias + trainingSet[0]]
+    cont = True
+    while cont:
+        cont = False
+        for (values, category) in trainingSet: 
+            stimulation = sum(weights, bias + values)
+            result = 1 if stimulation > weights[0] else 0
+            error = category - result
+            if error != 0:
+                cont = True
+            for i in range(0, len(values)):
+                weights[i] = weights[i] + alpha * error * values[i]
+    
+    return weights
+
+def test(testingSet, weights, theta = 0.65):
+    errors = []
+    theta = 0.65
+    for (values, category) in testingSet: 
+        stimulation = sum(weights, values)
+        result = 1 if stimulation > theta else 0
+        if result != category:
+            errors.append(values)
+
+
+
+if __name__ == '__main__':
+    dataSet = [([0,0], 0), ([1,0], 0), ([0,1], 0), ([1,1], 1)]
+    generatedClass1 = [([x, y], 1) for (x, y) in randomizeInputs(1, 1, 20)]
+    generatedClass0 = [([x, y], 0) for (x, y) in (randomizeInputs(0, 0, 7) + randomizeInputs(0, 1, 7) + randomizeInputs(1,0, 7))]
+    trainingSet = generatedClass1[10:] + generatedClass0[10: 0]
+    random.shuffle(trainingSet)
+    testingSet = generatedClass0[:10] + generatedClass1[:10]
+
+    weights = trainPercepton(trainingSet)
+    print(test(testingSet, weights))
+
+    weightsBiast = trainPerceptonBias(trainingSet)
+    print(test(testingSet, weights))
+
+
+
+            
+
+
+    
+
