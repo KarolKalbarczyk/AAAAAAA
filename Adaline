@@ -1,0 +1,138 @@
+import random
+import types
+import csv
+
+def sum(weights, values):
+    sum = 0
+    for i in range(0, len(weights)):
+        sum += weights[i] * values[i]
+    return sum
+
+def randomizeInputs(x, y, i):
+    results = []
+    for i in range(0, i):
+        nextY = y + random.random() * 0.15
+        nextX = x + random.random() * 0.15
+        results.append((nextX, nextY))
+    return results
+
+def trainPercepton(trainingSet, biasInfo, mi = 0.001, desiredSigma = 0.2, weightRange = 1):
+    eras = 0
+    bias = [biasInfo.bias]
+    weights = [(random.random() - 0.5) * weightRange  for _ in bias + trainingSet[0][0]]
+    print(weights)
+    cont = True
+    while cont:
+        eras += 1
+        cont = False
+        for (values, category) in trainingSet: 
+            values = bias + values
+            stimulation = sum(weights, values)
+            sigma = category - stimulation
+            if abs(sigma) > desiredSigma:
+                cont = True
+            for i in range(0, len(values)):
+                weights[i] = weights[i] + 2 * mi * sigma * values[i]
+    
+    return weights, eras
+
+def test(testingSet, weights, activation, biasInfo):
+    errors = []
+    for (values, category) in testingSet: 
+        values = [biasInfo.bias] + values
+        stimulation = sum(weights, values)
+        result = activation.max if stimulation > bias.theta else activation.min
+        if category != result:
+            errors.append(values)
+    return (len(errors) / len(testingSet))
+
+
+def doTest(firstClass, secondClass, activation, biasInfo, mi = 0.001, desiredSigma = 0.2, weightRange = 1):
+    trainingSet = firstClass[int(len(firstClass) / 2):] + secondClass[int(len(secondClass) / 2):]
+    random.shuffle(trainingSet)
+    testingSet = firstClass[:int(len(firstClass) / 2)] + secondClass[:int(len(secondClass) / 2)]
+
+    weights, eras = trainPercepton(trainingSet, biasInfo, mi, desiredSigma, weightRange)
+    accuracy = test(testingSet, weights, activation, biasInfo)
+    return accuracy, eras
+
+def doRetries(firstClass, secondClass, activation, biasInfo, miArray, desiredSigmaArray, weightRangeArray, getRelevantValue, relevantValueName):
+    answer = []
+    for i in range(0, len(miArray)):
+        accuracySum = 0
+        erasSum = 0
+        for k in range(0, 20):
+            random.seed(a=k)
+            accuracy, eras = doTest(firstClass, secondClass, activation, biasInfo, miArray[i], desiredSigmaArray[i], weightRangeArray[i])
+            accuracySum += accuracy
+            erasSum += eras
+        answer.append([getRelevantValue(i), accuracySum / 20, erasSum / 20])
+    with open(f'wyniki2{relevantValueName}.csv', mode='w') as file:
+        writer = csv.writer(file, delimiter='&', quotechar='"', quoting=csv.QUOTE_MINIMAL)
+        writer.writerow([relevantValueName, "skuteczność", "liczba epok"])
+        for a in answer:
+            writer.writerow(a)
+
+
+def getInputs():
+    shouldGet = input('Wykorzystac predefiniowane wartosci?')
+    if shouldGet == "tak":
+        return  [([0,0], 0), ([1,0], 0), ([0,1], 0), ([1,1], 1)]
+    print('Wpisz koordynat X, Y i klasę(1 lub 0) oddzieloną spacjami')
+    inputs = []
+    while True:
+        values = input().split(' ')
+        input.append(([int(values[0]), int(values[1])], int(values[2])))
+        if input('kontynuowac?') == 'nie':
+            break
+    return inputs
+
+
+def repeat(value, n):
+    answer = []
+    for i in range(0, n):
+        answer.append(value)
+    return answer
+
+if __name__ == '__main__':
+    dataSet = getInputs()
+    random.seed(a = 1)
+    class1 = list(filter(lambda x: x[1] == 1, dataSet))
+    class0 = list(filter(lambda x: x[1] == 0, dataSet))
+    relation = len(class1) / len(class0)
+    
+    numOfClass1 = 10 / relation if relation < 0 else 10 
+    numOfClass0 = 10 * relation if relation > 0 else 10 
+
+    generatedClass1 = [([genX, genY], 1) 
+        for ([x,y], _) in class1 
+        for (genX, genY) in randomizeInputs(x, y, int(numOfClass1))]
+    generatedClass0 = [([genX, genY], 0) 
+        for ([x,y], _) in class0 
+        for (genX, genY) in randomizeInputs(x, y, int(numOfClass0))]
+    generatedClassMinus1 = [([x - 1 if x < 0.5 else 1,y - 1 if y < 0.5 else 1], -1) for ([x, y], _) in generatedClass0]
+    
+    activation0 = types.SimpleNamespace(max=1, min = 0)
+    activationMinus =  types.SimpleNamespace(max=1, min = -1)
+
+    bias = types.SimpleNamespace(bias=1, theta=0)
+    
+    miArray = [0.001, 0.005, 0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1]
+    rangeArray = [2, 1.6, 1.2, 1.0, 0.8, 0.6, 0.4, 0.2]
+    desiredSigmaArray = [2, 1.5, 1.2, 1.0, 0.85, 0.7, 0.5, 0.4, 0.20]
+    doRetries(generatedClass1, generatedClassMinus1, activationMinus, bias,
+        miArray, repeat(0.4, len(miArray)), repeat(1, len(miArray)),
+        lambda i: miArray[i], "mi")
+
+    doRetries(generatedClass1, generatedClassMinus1, activationMinus, bias,
+        repeat(0.01, len(rangeArray)), repeat(0.4, len(rangeArray)), rangeArray,
+        lambda i: f"{-0.5 * rangeArray[i]} - {0.5 * rangeArray[i]}", "range")
+
+    doRetries(generatedClass1, generatedClassMinus1, activationMinus, bias,
+        repeat(0.01, len(desiredSigmaArray)), desiredSigmaArray, repeat(1, len(desiredSigmaArray)),
+        lambda i: desiredSigmaArray[i], "sigma")
+
+    
+    doRetries(generatedClass1, generatedClass0, activation0, bias,
+        [0.05], [0.4], [1],
+        lambda i: i, "activation")
