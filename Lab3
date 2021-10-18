@@ -1,0 +1,81 @@
+import math 
+import random
+import gzip
+
+def softMax(vector):
+    denominator = sum([math.e ** x for x in vector])
+    return [(math.e ** x) / denominator for x in vector]
+
+def multiplyWeights(weights, values):
+    answer = []
+    for row in weights:
+        sum = 0
+        for i in range(0, len(row)):
+            sum += row[i] * values[i]
+        answer.append(sum)
+    return answer
+
+def addBiases(stimulations, biases):
+    answer = []
+    for i in range (0, len(stimulations)):
+        answer.append(biases[i] + stimulations[i])
+    return answer
+
+def calculateCompleteStimulation(weights, values, biases):
+    stimulations = multiplyWeights(weights, values)
+    return addBiases(stimulations, biases)
+
+def ReLU(vector):
+    return [ max(0, x) for x in vector]
+
+def calculate(network, inputs, weightGenerator, biasGenerator, activationFuncs):
+    def propagateBackward(layerNumber):
+        if layerNumber == len(network) - 1:
+            return inputs
+        weights = weightGenerator(layerNumber)
+        biases = biasGenerator(layerNumber)
+        activationFunction = activationFuncs(layerNumber)
+        values = propagateBackward(layerNumber + 1)
+        completeStimulation = calculateCompleteStimulation(weights, values, biases)
+        return activationFunction(completeStimulation)
+
+    outputActivation = propagateBackward(0)
+    return outputActivation
+
+def weightGenerator(layerNumber, network):
+    answer = []
+    for i in range(0, network[layerNumber]):
+        answer.append([random.random() * 0.1 for _ in range(0, network[layerNumber + 1])])
+    return answer
+
+def biasGenerator(layerNumber, network):
+    return [random.random() * 0.1 for _ in range(0, network[layerNumber + 1])]
+   
+
+def getTrainingSet():
+    file = gzip.open("train-images-idx3-ubyte.gz", "r")
+    bytes = file.read()
+    images = int.from_bytes(bytes[4:8], byteorder='big', signed=False)
+    rows = int.from_bytes(bytes[8:12], byteorder='big', signed=False)
+    columns = int.from_bytes(bytes[12:16], byteorder='big', signed=False)
+    pixelsInImage = rows * columns
+    imagesData = []
+    for i in range(0, images):
+        data = bytes[16 + i * pixelsInImage:16 + (i + 1) * pixelsInImage]
+        imagesData.append([int(b) for b in data])
+    labels = gzip.open("train-labels-idx1-ubyte.gz", "r").read()
+    labelsData = labels[8: images + 8]
+    return [(imagesData[i], labelsData[i]) for i in range(0, images)]
+
+
+
+def bytesToNumber():
+    int(bytes.encode('hex'), 16)
+
+if __name__ == '__main__':
+    network = [60000, 10]
+    images = getTrainingSet()
+    imageValues = [data[0] for data in images]
+    print(imageValues[0])
+    result = calculate(network, imageValues, lambda x: weightGenerator(x, network), lambda x: biasGenerator(x, network), lambda i: softMax if i == 0 else ReLU)
+    print(result)
