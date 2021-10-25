@@ -1,10 +1,23 @@
-import math 
+import math
+from os import error 
 import random
 import gzip
+import numpy as np
+
+class Layer:
+    neurons = 0
+    values = []
+    weights = []
+    biases = []
+    activationFunc = lambda x: x
+
+    def __init__(self, neurons):
+        self.neurons = neurons
 
 def softMax(vector):
+    vector = np.asarray(vector).flatten()
     denominator = sum([math.e ** x for x in vector])
-    return [(math.e ** x) / denominator for x in vector]
+    return np.transpose(np.matrix([(math.e ** x) / denominator for x in vector]))
 
 def multiplyWeights(weights, values):
     answer = []
@@ -22,35 +35,36 @@ def addBiases(stimulations, biases):
     return answer
 
 def calculateCompleteStimulation(weights, values, biases):
-    stimulations = multiplyWeights(weights, values)
-    return addBiases(stimulations, biases)
+    try:
+        value =  (weights @ values) + biases
+        return value
+    except:
+        print(values)
+        raise
 
-def ReLU(vector):
-    return [ max(0, x) for x in vector]
+def sigmoidal(vector):
+    f = lambda vec: 1 / (1 + (math.e ** vec[0]))
+    return np.apply_along_axis(f, 1, np.asarray(vector))
 
-def calculate(network, inputs, weightGenerator, biasGenerator, activationFuncs):
-    def propagateBackward(layerNumber):
+def calculate(network, inputs):
+
+    def propagate(layerNumber, values):
+        layer = network[layerNumber]
         if layerNumber == len(network) - 1:
-            return inputs
-        weights = weightGenerator(layerNumber)
-        biases = biasGenerator(layerNumber)
-        activationFunction = activationFuncs(layerNumber)
-        values = propagateBackward(layerNumber + 1)
-        completeStimulation = calculateCompleteStimulation(weights, values, biases)
-        return activationFunction(completeStimulation)
+            return layer.activationFunc(values)
+        completeStimulation = calculateCompleteStimulation(layer.weights, values, layer.biases)
+        totalActivation = layer.activationFunc(completeStimulation)
+        return propagate(layerNumber + 1, totalActivation)
 
-    outputActivation = propagateBackward(0)
+    outputActivation = propagate(0, inputs)
     return outputActivation
 
-def weightGenerator(layerNumber, network):
+def generateWeights(neurons, nextNeurons):
     answer = []
-    for i in range(0, network[layerNumber]):
-        answer.append([random.random() * 0.1 for _ in range(0, network[layerNumber + 1])])
-    return answer
+    for i in range(0, nextNeurons):
+        answer.append([random.random() * 0.00001 for _ in range(0, neurons)])    
+    return np.matrix(answer)
 
-def biasGenerator(layerNumber, network):
-    return [random.random() * 0.1 for _ in range(0, network[layerNumber + 1])]
-   
 
 def getTrainingSet():
     file = gzip.open("train-images-idx3-ubyte.gz", "r")
@@ -67,15 +81,23 @@ def getTrainingSet():
     labelsData = labels[8: images + 8]
     return [(imagesData[i], labelsData[i]) for i in range(0, images)]
 
-
-
 def bytesToNumber():
     int(bytes.encode('hex'), 16)
 
 if __name__ == '__main__':
-    network = [60000, 10]
+    a = [1 for _ in np.array([1,2,3])]
+    print(a)
+    network = [ Layer(x) for x in [784, 5, 8, 10]]
+    for i in range(0, len(network)):
+        layer = network[i]
+        layer.activationFunc = softMax if i == len(network) - 1 else sigmoidal
+        if i == len(network) - 1:
+            break
+        layer.biases = np.transpose(np.matrix([random.random() * 0.1 for _ in range(0, network[i + 1].neurons)]))
+        layer.weights = generateWeights(layer.neurons, network[i + 1].neurons)
+
     images = getTrainingSet()
     imageValues = [data[0] for data in images]
     print(imageValues[0])
-    result = calculate(network, imageValues, lambda x: weightGenerator(x, network), lambda x: biasGenerator(x, network), lambda i: softMax if i == 0 else ReLU)
+    result = calculate(network, np.transpose(np.matrix(imageValues[0])))
     print(result)
