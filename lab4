@@ -99,7 +99,27 @@ def softPlus(vector):
 def ReLuDerivative(vector):
     return sigmoidal(vector)
 
-def adjustWeights(network, answers):
+def adjustWeights():
+    pass
+
+def train(network, trainSets, batchSize, alpha):
+    i = 0
+    while i < len(trainSets):
+        for trainSet in range(0, batchSize):
+            if i == len(trainSets):
+                break
+            
+            trainSet = trainSets[i]
+            inputs = [x[0] for x in trainSet]
+            answers = [x[1] for x in trainSet]
+            result = calculate(network, np.transpose(np.matrix(inputs)))
+            adjustments = getWeightAdjustment(network, answers)
+            adjustWeights(network, adjustments, alpha)
+            i += 1
+    
+
+
+def getWeightAdjustment(network, answers):
     answers = np.transpose(np.matrix(answers))
     sigmas = []
 
@@ -124,6 +144,21 @@ def adjustWeights(network, answers):
     sigmas.append(sigma)
     propagate(layerNum - 1, sigma)
     return sigmas
+
+def prepare(hiddenNumberNeurons, function, derivative):
+    network = [ Layer(x) for x in [hiddenNumberNeurons[0], hiddenNumberNeurons[1], hiddenNumberNeurons[2], 10]]
+    for i in range(1, len(network)):
+        layer = network[i]
+        layer.activationFunc = softMax if i == len(network) - 1 else function
+        layer.derivative = derivative
+        layer.biases = np.transpose(np.matrix([random.random() * 0.1 for _ in range(0, layer.neurons)]))
+        layer.weights = generateWeights(network[i - 1].neurons, layer.neurons)
+
+    images = getTrainingSet()
+    imageValues = [data[0] for data in images]
+
+def test():
+
 
 if __name__ == '__main__':
     network = [ Layer(x) for x in [4, 5, 8, 10]]
