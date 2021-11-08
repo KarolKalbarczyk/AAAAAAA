@@ -3,6 +3,9 @@ from os import error
 import random
 import gzip
 import numpy as np
+import warnings
+
+maxVec = 0
 
 class Layer:
     neurons = 0
@@ -21,35 +24,27 @@ def softMax(vector):
     denominator = sum([math.e ** x for x in vector])
     return np.transpose(np.matrix([(math.e ** x) / denominator for x in vector]))
 
-def multiplyWeights(weights, values):
-    answer = []
-    for row in weights:
-        sum = 0
-        for i in range(0, len(row)):
-            sum += row[i] * values[i]
-        answer.append(sum)
-    return answer
-
-def addBiases(stimulations, biases):
-    answer = []
-    for i in range (0, len(stimulations)):
-        answer.append(biases[i] + stimulations[i])
-    return answer
-
 def calculateCompleteStimulation(weights, values, biases):
-    value = (weights @ values) + biases
-    return value
+    return (weights @ values) + biases
 
 def sigmoidal(vector):
-    f = lambda vec: 0 if vec > 10 else 1 / (1 + (math.e ** vec[0]))
-    a = np.transpose(np.matrix(np.apply_along_axis(f, 1, np.asarray(vector))))
-    return a
+    array = np.asarray(vector).flatten()
+    result = []
+    for x in array:
+        if x > 10:
+            result.append(1)
+        elif x < -10:
+            result.append(0)
+        else:
+            result.append(1 / (1 + math.e ** -x))
+    return np.transpose(np.matrix(result))
 
 def calculate(network, inputs):
 
     def propagate(layerNumber, values):
         if layerNumber == len(network) :
             return values
+
         layer = network[layerNumber]
         completeStimulation = calculateCompleteStimulation(layer.weights, values, layer.biases)
         totalActivation = layer.activationFunc(completeStimulation)
@@ -64,7 +59,7 @@ def calculate(network, inputs):
 def generateWeights(neurons, nextNeurons):
     answer = []
     for _ in range(0, nextNeurons):
-        answer.append((np.random.normal(0, 0.1, neurons) * 0.01).tolist())    
+        answer.append(np.random.normal(0, 0.1, neurons).tolist())    
     return np.matrix(answer)
 
 def getTrainingSet():
@@ -86,12 +81,8 @@ def bytesToNumber():
     int(bytes.encode('hex'), 16)
 
 def sigmoidalDerivative(vector):
-    vector = np.asarray(vector).flatten()
-    answer = []
-    for v in vector:
-        val = 1 / (1 + math.e ** -v)
-        answer.append(1 / (1 + math.e ** (1 - val)))
-    return np.transpose(np.matrix(answer))
+    val = sigmoidal(vector)
+    return sigmoidal(1 - val)
 
 def softPlus(vector):
     return [math.log(1 + math.e ** v) for v in vector]
@@ -105,13 +96,11 @@ def train(network, trainSets, batchSize, alpha):
         i = 0
         while i < len(trainSets):
             sigmas = []
-            print("newbatch")
+            #print("newbatch")
             for _ in range(0, batchSize):
                 if i == len(trainSets):
                     break
-                trainSet = trainSets[i]
-                inputs = trainSet[0]
-                answer =  trainSet[1]
+                inputs, answer = trainSets[i]
                 result = calculate(network, np.transpose(np.matrix(inputs)))
                 answers = [0 for _ in range(0, 10)]
                 answers[answer - 1] = 1
@@ -121,7 +110,7 @@ def train(network, trainSets, batchSize, alpha):
                 sigmas.append(adjustments)
                 i += 1
 
-                print(np.argmax(result))
+                #print(np.argmax(result))
                 
                 # if np.argmax(result) == answer - 1:
                 #     print(np.argmax(result))
@@ -141,27 +130,31 @@ def getWeightAdjustment(network, answers):
         nonlocal sigmas
         layer = network[layerNumber]
         weights = np.transpose(network[layerNumber + 1].weights)
-        derived = layer.derivative(layer.stimulation)
+        derived = layer.derivative(layer.values)
         layerSigma = np.multiply((weights @ previousSigma), derived)
-        sigmas.append(layerSigma)
+        layerSigmaAdjustments = layerSigma @ np.transpose(network[layerNumber - 1].values)
+        sigmas.append((layerSigma, layerSigmaAdjustments))
         propagate(layerNumber - 1, layerSigma)
 
     layerNum = len(network) - 1
     layer = network[layerNum]
     sigma = -(answers - layer.values)
-    sigmas.append(sigma)
+    sigmaAdjustment = sigma @ np.transpose(network[layerNum - 1].values)
+    sigmas.append((sigma, sigmaAdjustment))
     propagate(layerNum - 1, sigma)
     return sigmas
 
 def adjustWeights(network, sigmas, alpha):
     for i in range(1, len(network)):
         layer = network[i]
-        first = sigmas[0][i - 1] @ np.transpose(network[i - 1].values)
+        first = sigmas[0][i - 1][1]
+        biases = sigmas[0][i - 1][0]
         for j in range(1, len(sigmas)):
-            values = np.transpose(network[i - 1].values)
-            first = first  + (sigmas[j][i - 1] @ values)
+            first = first + sigmas[j][i - 1][1]
+            biases = biases + sigmas[j][i - 1][0]
         #print(layer.weights)
-        layer.weights = layer.weights - ((alpha / 10) * first)
+        layer.weights = layer.weights - ((alpha / 100) * first)
+        layer.biases = layer.biases - (alpha / 100 ) * biases
 
 def prepare(hiddenNumberNeurons, function, derivative):
     network = [ Layer(x) for x in [hiddenNumberNeurons[0], hiddenNumberNeurons[1], hiddenNumberNeurons[2], 10]]
@@ -175,20 +168,20 @@ def prepare(hiddenNumberNeurons, function, derivative):
     images = getTrainingSet()
     imageValues = [data[0] for data in images]
 
-
 if __name__ == '__main__':
     network = [ Layer(x) for x in [784, 5, 8, 10]]
     for i in range(1, len(network)):
         layer = network[i]
         layer.activationFunc = softMax if i == len(network) - 1 else sigmoidal
         layer.derivative = sigmoidalDerivative
-        layer.biases = np.transpose(np.matrix((np.random.normal(0, 0.1, layer.neurons) * 0.01).tolist()))
+        layer.biases = np.transpose(np.matrix((np.random.normal(0, 0.1, layer.neurons)).tolist()))
         layer.weights = generateWeights(network[i - 1].neurons, layer.neurons)
-    
+
+    a = np.exp(-np.matrix([1,2,3,4]))
+    print(a)
+
     images = getTrainingSet()
     random.shuffle(images)
-    #a = np.matrix([1,2,3,4]) + np.matrix([1,2])
-    
     train(network, images, 100, 0.8)
     # imageValues = [data[0] for data in images]
     # print(len(imageValues[0]))
