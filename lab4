@@ -4,6 +4,9 @@ import random
 import gzip
 import numpy as np
 import warnings
+import time
+import multiprocessing
+from joblib import Parallel, delayed
 
 maxVec = 0
 
@@ -86,8 +89,8 @@ def generateWeights(neurons, nextNeurons, std):
         answer.append(list)    
     return np.matrix(answer)
 
-def getTrainingSet():
-    file = gzip.open("train-images-idx3-ubyte.gz", "r")
+def getTrainingSet(name, labelName):
+    file = gzip.open(name, "r")
     bytes = file.read()
     images = int.from_bytes(bytes[4:8], byteorder='big', signed=False)
     rows = int.from_bytes(bytes[8:12], byteorder='big', signed=False)
@@ -97,17 +100,20 @@ def getTrainingSet():
     for i in range(0, images):
         data = bytes[16 + i * pixelsInImage:16 + (i + 1) * pixelsInImage]
         imagesData.append([int(b) / 2550 for b in data])
-    labels = gzip.open("train-labels-idx1-ubyte.gz", "r").read()
+    labels = gzip.open(labelName, "r").read()
     labelsData = labels[8: images + 8]
     return [(imagesData[i], labelsData[i]) for i in range(0, images)]
 
 
-def train(network, trainSets, testingSet, batchSize, alpha, stoppingTreshold):
+def train(network, trainSets2, testingSet, batchSize, alpha, stoppingTreshold):
     maxAcc = 0
-    while True:
-        random.shuffle(trainSets)
+        
+    accValid = 0
+    epochCount = 0
+    while accValid < 0.85 and epochCount < 30:
+        random.shuffle(trainSets2)
+        trainSets = trainSets2[:10000]
         i = 0
-        accValid = 0
         accTest = 0
         savedValues = []
         while i < len(trainSets):
@@ -139,17 +145,20 @@ def train(network, trainSets, testingSet, batchSize, alpha, stoppingTreshold):
             inputs, answer = test
             result = calculate(network, np.transpose(np.matrix(inputs)))
             accValid += 1 if np.argmax(result) == answer - 1 else 0
-
-        if (accValid / len(testingSet)) > maxAcc:
+        accValid = accValid / len(testingSet)
+        if (accValid) > maxAcc:
             maxAcc = (accValid / len(testingSet))
             savedValues = [(x.weights, x.biases) for x in network]
         
-        if  (accTest / len(trainSets)) - ((accValid / len(testingSet))) > stoppingTreshold:
+        if  (accTest / len(trainSets)) - accValid > stoppingTreshold:
             for i in range(0, len(network)):
                 layer = network[i] 
                 layer.weights, layer.biases = savedValues[i]
-        
-        print(accValid / len(testingSet)) 
+
+        epochCount += 1
+
+    return epochCount
+    
 
 def getWeightAdjustment(network, answers):
     answers = np.transpose(np.matrix(answers))
@@ -186,7 +195,18 @@ def adjustWeights(network, sigmas, alpha, batchSize):
         layer.weights = layer.weights - ((alpha / batchSize) * first)
         layer.biases = layer.biases - ((alpha / batchSize) * biases)
 
-def prepare(hiddenNumberNeurons, functions, derivatives, alpha, batchSize, stoppingTreshold, std):
+
+def test(network, testingSet):
+    accValid = 0
+    for test in testingSet:
+        inputs, answer = test
+        result = calculate(network, np.transpose(np.matrix(inputs)))
+        accValid += 1 if np.argmax(result) == answer - 1 else 0
+    return accValid / len(testingSet)
+
+
+def prepare(hiddenNumberNeurons, functions, derivatives, alpha, batchSize, stoppingTreshold, std, i, images, testingImages):
+    np.random.seed(i)
     network = [ Layer(x) for x in hiddenNumberNeurons + [10]]
     for i in range(1, len(network)):
         layer = network[i]
@@ -195,16 +215,60 @@ def prepare(hiddenNumberNeurons, functions, derivatives, alpha, batchSize, stopp
         layer.biases = np.transpose(np.matrix((np.random.normal(0, std, layer.neurons)).tolist()))
         layer.weights = generateWeights(network[i - 1].neurons, layer.neurons, std)
 
+    training = images[:59000]
+    testing = images[59000:]
+    epochCount = train(network, training, testing, batchSize, alpha, stoppingTreshold)
+    performance = test(network, testingImages)
+    return epochCount, performance
 
-    images = getTrainingSet()
-    training = images[:54000]
-    testing = images[54000:]
-    train(network, training, testing, batchSize, alpha, stoppingTreshold)
 
 if __name__ == '__main__':
-    activations = [tanh, tanh, ReLu]
-    derivatives = [tanhDerivative, tanhDerivative, ReLuDerivative]
-    prepare([784, 100, 20], activations, derivatives, 0.1, 100, 0.5, 0.1)
+    activations = [tanh, tanh, tanh]
+    images = getTrainingSet("train-images-idx3-ubyte.gz", "train-labels-idx1-ubyte.gz")
+    testingImages = getTrainingSet("t10k-images-idx3-ubyte.gz", "t10k-labels-idx1-ubyte.gz")
+
+    derivatives = [tanhDerivative, tanhDerivative, tanhDerivative]
+    reDerivatives = [ReLuDerivative, ReLuDerivative, ReLuDerivative]
+    relus = [ReLu, ReLu, ReLu]
+    alphas = [0.02, 0.05, 0.1, 0.2, 0.5, 1, 5]
+    for a in alphas:
+        avgE = 0
+        avgP = 0
+        for i in range(0, 3):
+            e, p = prepare([784, 100], activations, derivatives, a, 100, 0.5, 0.1, i, images, testingImages)
+            avgE += e
+            avgP += p
+        print(f"alpha: {a} {(avgE / 3, avgP / 3)}")
+
+    for s in [0.05, 0.1, 0.2, 0.5, 1, 2, 5]:
+        avgE = 0
+        avgP = 0
+        for i in range(0, 3):
+            e, p = prepare([784, 100], activations, derivatives, 0.5, 100, 0.5, s, i, images, testingImages)
+            avgE += e
+            avgP += p
+        print(f"std: {s} {(avgE / 3, avgP / 3)}")
+    
+    size = [5, 10, 20, 50, 100, 200, 500, 1000]
+    for s in size:
+        avgE = 0
+        avgP = 0
+        for i in range(0, 3):
+            e, p = prepare([784, s], activations, derivatives, 0.5, 100, 0.5, 0.1, i, images, testingImages)
+            avgE += e
+            avgP += p
+        print(f"size: s {(avgE / 3, avgP / 3)}")
+
+    batch = [1, 2, 5, 10, 20, 50, 100, 250, 1000]
+    for b in batch:
+        avgE = 0
+        avgP = 0
+        for i in range(0, 3):
+            e, p = prepare([784, 100], activations, derivatives, 0.5, b, 0.5, 0.1, i, images, testingImages)
+            avgE += e
+            avgP += p
+        print(f"batch: {b} {(avgE / 3, avgP / 3)}")
+    
     network = [ Layer(x) for x in [784, 5, 8, 10]]
     for i in range(1, len(network)):
         layer = network[i]
@@ -213,14 +277,12 @@ if __name__ == '__main__':
         layer.biases = np.transpose(np.matrix((np.random.normal(0, 0.1, layer.neurons)).tolist()))
         layer.weights = generateWeights(network[i - 1].neurons, layer.neurons)
 
-    
+    # a = generateWeights(5, 4, None)
+    # print(a)
 
-    a = generateWeights(5, 4, None)
-    print(a)
-
-    images = getTrainingSet()[:54000]
-    testing = getTrainingSet()[54000:]
-    train(network, images, testing, 100, 0.8)
+    # images = getTrainingSet()[:54000]
+    # testing = getTrainingSet()[54000:]
+    # train(network, images, testing, 100, 0.8)
 
     # imageValues = [data[0] for data in images]
     # print(len(imageValues[0]))
