@@ -1,0 +1,207 @@
+
+def generateWeightsXavier(prevNeurons, neurons):
+    std = math.sqrt(2 / (prevNeurons + neurons))
+    return generateWeights(prevNeurons, neurons, std)
+
+def generateWeightsHe(prevNeurons, neurons):
+    std = math.sqrt(2 / (prevNeurons))
+    return generateWeights(prevNeurons, neurons, std)
+
+
+class Momentum:
+    weights = []
+    biases = []
+    momentum = 0.5
+
+    def adjustWeights(self, network, sigmas, alpha, batchSize, epoch):
+        for i in range(1, len(network)):
+            layer = network[i]
+            first = sigmas[0][i - 1][1]
+            biases = sigmas[0][i - 1][0]
+            for j in range(1, len(sigmas)):
+                first = first + sigmas[j][i - 1][1]
+                biases = biases + sigmas[j][i - 1][0]
+        
+            if len(self.weights) > i -1:
+                weightChange = (alpha / batchSize) * first + self.momentum * self.weights[i - 1]
+                biasChange = (alpha / batchSize) * biases + self.momentum * self.biases[i - 1]
+                self.weights[i - 1] = (weightChange)
+                self.biases[i - 1] = (biasChange)
+            else:
+                weightChange = (alpha / batchSize) * first 
+                biasChange = (alpha / batchSize) * biases 
+                self.weights.append(weightChange)
+                self.biases.append(biasChange)
+
+            layer.weights = layer.weights - weightChange 
+            layer.biases = layer.biases - biasChange 
+
+class Nesterov:
+    weights = []
+    biases = []
+    momentum = 0.5
+
+    def adjustWeights(self, network, sigmas, alpha, batchSize, epoch):
+        for i in range(1, len(network)):
+            layer = network[i]
+            first = sigmas[0][i - 1][1]
+            biases = sigmas[0][i - 1][0]
+            for j in range(1, len(sigmas)):
+                first = first + sigmas[j][i - 1][1]
+                biases = biases + sigmas[j][i - 1][0]
+        
+            first = first / batchSize * alpha
+            biases =  biases / batchSize * alpha
+            if len(self.weights) > i -1:
+                weightChange = first + self.momentum * self.weights[i - 1] 
+                biasChange = biases + self.momentum * self.biases[i - 1]
+                weightChange = weightChange + weightChange * self.momentum
+                biasChange = biasChange + biasChange * self.momentum
+                self.weights[i - 1] = (weightChange)
+                self.biases[i - 1] = (biasChange)
+            else:
+                weightChange =  first 
+                biasChange = biases 
+                self.weights.append(weightChange)
+                self.biases.append(biasChange)
+
+            layer.weights = layer.weights - weightChange 
+            layer.biases = layer.biases - biasChange 
+
+
+class Adam:
+    weightM = []
+    weightV = []
+    biasM = []
+    biasV = []
+    beta1 = 0.9
+    beta2 = 0.999
+        
+    def adjustWeights(self, network, sigmas, alpha, batchSize, epoch):
+        for i in range(1, len(network)):
+            layer = network[i]
+            first = sigmas[0][i - 1][1]
+            biases = sigmas[0][i - 1][0]
+            for j in range(1, len(sigmas)):
+                first = first + sigmas[j][i - 1][1]
+                biases = biases + sigmas[j][i - 1][0]
+
+            weightChange = first / batchSize #* (alpha / batchSize) 
+            biasChange = biases /batchSize #* (alpha / batchSize) 
+            
+            weightChangeAdam = None
+            biasChangeAdam = None
+            if len(self.weightM) > i - 1:
+                #print(RMS.weightAvg[i - 1])
+                weightM = self.beta1 * self.weightM[i - 1] + (1 - self.beta1) * weightChange
+                weightV = self.beta2 * self.weightV[i - 1] + (1 - self.beta2) * np.multiply(weightChange, weightChange)
+                biasM = self.beta1 * self.biasM[i - 1] + (1 - self.beta1) * biasChange
+                biasV = self.beta2 * self.biasV[i - 1] + (1 - self.beta2) * np.multiply(biasChange, biasChange)
+                
+                self.weightM[i - 1] = weightM
+                self.weightV[i - 1] = weightV
+                self.biasM[i - 1] = biasM
+                self.biasV[i - 1] = biasV
+
+                weightMCorrected = (weightM) / (1 - self.beta1 ** epoch)
+                weightVCorrected = (weightV) / (1 - self.beta2 ** epoch)
+                biasMCorrected = (biasM) / (1 - self.beta1 ** epoch)
+                biasVCorrected = (biasV) / (1 - self.beta2 ** epoch)
+
+                weightChangeAdam = np.multiply(divideBy(alpha, np.sqrt(weightVCorrected)), weightMCorrected)
+                biasChangeAdam = np.multiply(divideBy(alpha, np.sqrt(biasVCorrected)), biasMCorrected)
+            else:
+                weightM = (1 - self.beta1) * weightChange
+                weightV = (1 - self.beta2) * np.multiply(weightChange, weightChange)
+                biasM = (1 - self.beta1) * biasChange
+                biasV = (1 - self.beta2) * np.multiply(biasChange, biasChange)
+                
+                self.weightM.append(weightM)
+                self.weightV.append(weightV)
+                self.biasM.append(biasM)
+                self.biasV.append(biasV)
+
+                weightMCorrected = (weightM) / (1 - self.beta1 ** epoch)
+                weightVCorrected = (weightV) / (1 - self.beta2 ** epoch)
+                biasMCorrected = (biasM) / (1 - self.beta1 ** epoch)
+                biasVCorrected = (biasV) / (1 - self.beta2 ** epoch)
+
+                weightChangeAdam = np.multiply(divideBy(alpha, np.sqrt(weightVCorrected)), weightMCorrected)
+                biasChangeAdam = np.multiply(divideBy(alpha, np.sqrt(biasVCorrected)), biasMCorrected)
+
+            layer.weights = layer.weights - weightChangeAdam
+            layer.biases = layer.biases - biasChangeAdam
+
+class Adadelta:
+    weightAvg = []
+    biasAvg = []
+    gamma = 0.9
+        
+    def adjustWeights(self, network, sigmas, alpha, batchSize, epoch):
+        for i in range(1, len(network)):
+            layer = network[i]
+            first = sigmas[0][i - 1][1]
+            biases = sigmas[0][i - 1][0]
+            for j in range(1, len(sigmas)):
+                first = first + sigmas[j][i - 1][1]
+                biases = biases + sigmas[j][i - 1][0]
+
+            weightChange = first /batchSize #* (alpha / batchSize) 
+            biasChange = biases /batchSize #* (alpha / batchSize) 
+            
+            weightSquare = None
+            biasSquare = None
+            if len(self.weightAvg) > i - 1:
+                weightM = np.multiply(RMS.weightAvg[i - 1], self.weightAvg[i - 1])
+                weightSquare = divideBy(alpha, np.sqrt(weightM))
+                biasM = np.multiply(RMS.biasAvg[i - 1], self.biasAvg[i - 1])
+                biasSquare = divideBy(alpha, np.sqrt(biasM))
+                self.weightAvg[i - 1] = (self.gamma * RMS.weightAvg[i - 1] + (1 - self.gamma) * weightChange ) 
+                self.biasAvg[i - 1] = (self.gamma * RMS.biasAvg[i - 1] + (1 - self.gamma) * biasChange)
+            else:
+                self.weightAvg.append((1 - self.gamma) * weightChange)
+                self.biasAvg.append((1 - self.gamma) * biasChange)
+
+            layer.weights = layer.weights - (np.multiply(weightSquare, weightChange) if weightSquare is not None else weightChange)
+            layer.biases = layer.biases - (np.multiply(biasSquare, biasChange) if weightSquare is not None else biasChange)
+
+
+class Adagrad:
+    weightGradients = []
+    biasGradients = []
+      
+        
+        
+    def adjustWeights(self, network, sigmas, alpha, batchSize):
+        for i in range(1, len(network)):
+            layer = network[i]
+            first = sigmas[0][i - 1][1]
+            biases = sigmas[0][i - 1][0]
+            for j in range(1, len(sigmas)):
+                first = first + sigmas[j][i - 1][1]
+                biases = biases + sigmas[j][i - 1][0]
+            
+            weightChange = first / batchSize#* (alpha / batchSize) 
+            biasChange = biases / batchSize#* (alpha / batchSize) 
+            
+            weightSquare = None
+            biasSquare = None
+            if len(self.weightGradients) > i - 1:
+                bRoot = np.sqrt(self.biasGradients[i - 1])
+                wRoot = np.sqrt(self.weightGradients[i - 1])
+
+                biasSquare = divideBy(alpha, bRoot)  
+                weightSquare = divideBy(alpha, wRoot)
+                wSquare = np.multiply(weightChange, weightChange)
+                bSquare = np.multiply(biasChange, biasChange)
+                self.weightGradients[i - 1] = (wSquare + self.weightGradients[i - 1])
+                self.biasGradients[i - 1] = (bSquare + self.biasGradients[i - 1])
+            else:
+                wSquare = np.multiply(weightChange, weightChange)
+                bSquare = np.multiply(biasChange, biasChange)
+                self.weightGradients.append(wSquare)
+                self.biasGradients.append(bSquare)
+
+            
+            layer.weights = layer.weights - (np.multiply(weightSquare, weightChange) if weightSquare is not None else weightChange)
+            layer.biases = layer.biases - (np.multiply(biasSquare, biasChange) if weightSquare is not None else biasChange)
